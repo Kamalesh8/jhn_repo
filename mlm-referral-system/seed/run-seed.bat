@@ -1,0 +1,10 @@
+@echo off
+set VITE_FIREBASE_API_KEY=AIzaSyDB1nt2yoM-T5HfAq9EOc05ia5Imlx1t2U
+set VITE_FIREBASE_AUTH_DOMAIN=mlm-referral-system.firebaseapp.com
+set VITE_FIREBASE_PROJECT_ID=mlm-referral-system
+set VITE_FIREBASE_STORAGE_BUCKET=mlm-referral-system.firebasestorage.app
+set VITE_FIREBASE_MESSAGING_SENDER_ID=813082304851
+set VITE_FIREBASE_APP_ID=813082304851:web:fec16c1489dd2d5ff7c1a6
+set VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
+
+node seed\seed-admin.js
