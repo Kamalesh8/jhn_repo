@@ -13,4 +13,11 @@ export default defineConfig({
       "@/lib": path.resolve(__dirname, "./src/lib"),
     },
   },
+  server: {
+    cors: {
+      origin: '*',
+      methods: ['GET', 'PUT', 'POST', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization']
+    }
+  }
 });

@@ -8,6 +8,8 @@ import {
   sendPasswordResetEmail,
   updateProfile,
 } from "firebase/auth";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth, db, storage } from "../lib/firebase.ts";
 import {
   collection,
   doc,
@@ -21,7 +23,6 @@ import {
   increment,
   onSnapshot
 } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
 import type { User } from "@/types";
 import { generateReferralId, isAdminEmail } from "@/lib/utils";
 import { toast } from "sonner";
@@ -36,6 +37,7 @@ type AuthContextType = {
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateUserProfile: (data: Partial<User>) => Promise<void>;
+  updateProfilePicture: (file: File) => Promise<string>;
   loading: boolean;
   isAdmin: boolean;
   fetchUserProfile: (userId: string) => Promise<User | null>;
@@ -261,6 +263,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function updateProfilePicture(file: File) {
+    if (!currentUser) throw new Error("No user logged in");
+
+    try {
+      // Create a temporary URL for immediate display
+      const tempURL = URL.createObjectURL(file);
+
+      // Update profile with temp URL first
+      await updateProfile(currentUser, {
+        photoURL: tempURL,
+      });
+
+      // Update user document with temp URL
+      await updateDoc(doc(db, "users", currentUser.uid), {
+        photoURL: tempURL,
+        updatedAt: serverTimestamp()
+      });
+
+      // Now handle the actual upload in the background
+      const uploadAndUpdate = async () => {
+        try {
+          const timestamp = Date.now();
+          const storageRef = ref(storage, `profile-pictures/${currentUser.uid}_${timestamp}.${file.name.split('.').pop()}`);
+
+          // Upload file
+          const uploadResult = await uploadBytes(storageRef, file);
+          const downloadURL = await getDownloadURL(uploadResult.ref);
+
+          // Update profile with permanent URL
+          await updateProfile(currentUser, {
+            photoURL: downloadURL,
+          });
+
+          // Update user document with permanent URL
+          await updateDoc(doc(db, "users", currentUser.uid), {
+            photoURL: downloadURL,
+            updatedAt: serverTimestamp()
+          });
+
+          // Clean up temporary URL
+          URL.revokeObjectURL(tempURL);
+
+          return downloadURL;
+        } catch (uploadError) {
+          console.error("Background upload failed:", uploadError);
+          // Keep the temp URL if upload fails
+          return tempURL;
+        }
+      };
+
+      // Start the background upload
+      uploadAndUpdate().catch(console.error);
+
+      return tempURL;
+    } catch (error) {
+      console.error("Error updating profile picture:", error);
+      throw new Error("Failed to update profile picture. Please try again.");
+    }
+  }
+
   async function updateUserProfile(data: Partial<User>) {
     try {
       if (!currentUser) throw new Error("No authenticated user");
@@ -358,6 +420,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logout,
     resetPassword,
     updateUserProfile,
+    updateProfilePicture,
     loading,
     isAdmin,
     fetchUserProfile,

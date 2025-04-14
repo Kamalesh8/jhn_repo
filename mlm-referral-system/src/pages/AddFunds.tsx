@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { doc, getDoc, updateDoc, setDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { formatCurrency } from "@/lib/utils";
-import { sendTransactionNotifications } from "@/services/notificationService";
+import { createInAppNotification } from "@/services/notificationService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -59,13 +59,18 @@ const AddFunds = () => {
         createdAt: serverTimestamp(),
       };
 
-      const transactionRef = await addDoc(collection(db, "transactions"), transactionData);
-
-      // Send notifications
-      await sendTransactionNotifications({
-        id: transactionRef.id,
+      const transactionRef = doc(collection(db, "transactions"));
+      await setDoc(transactionRef, {
         ...transactionData,
-        createdAt: new Date(),
+        id: transactionRef.id
+      });
+
+      // Create in-app notification
+      await createInAppNotification({
+        userId: currentUser.uid,
+        title: "Funds Added Successfully",
+        message: `${formatCurrency(amount)} has been added to your wallet.`,
+        type: "success",
       });
 
       // Update user's wallet

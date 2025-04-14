@@ -22,6 +22,12 @@ const profileFormSchema = z.object({
     .regex(/^\d+$/, "Phone number must contain only digits")
     .optional(),
   address: z.string().optional(),
+  bankDetails: z.object({
+    accountName: z.string().min(2, "Account name must be at least 2 characters"),
+    accountNumber: z.string().min(8, "Account number must be at least 8 digits").regex(/^\d+$/, "Account number must contain only digits"),
+    ifscCode: z.string().min(11, "IFSC code must be 11 characters").max(11, "IFSC code must be 11 characters"),
+    bankName: z.string().min(2, "Bank name must be at least 2 characters"),
+  }).optional(),
 });
 
 const passwordFormSchema = z
@@ -36,18 +42,26 @@ const passwordFormSchema = z
   });
 
 const Profile = () => {
-  const { userProfile, logout } = useAuth();
+  const { userProfile, logout, updateUserProfile, updateProfilePicture } = useAuth();
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isProfileUpdating, setIsProfileUpdating] = useState(false);
   const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showBankDetails, setShowBankDetails] = useState(false);
 
   const profileForm = useForm<z.infer<typeof profileFormSchema>>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
       name: userProfile?.name || "",
       email: userProfile?.email || "",
-      phone: "",
-      address: "",
+      phone: userProfile?.phone || "",
+      address: userProfile?.address || "",
+      bankDetails: {
+        accountName: userProfile?.bankDetails?.accountName || "",
+        accountNumber: userProfile?.bankDetails?.accountNumber || "",
+        ifscCode: userProfile?.bankDetails?.ifscCode || "",
+        bankName: userProfile?.bankDetails?.bankName || "",
+      },
     },
   });
 
@@ -63,9 +77,7 @@ const Profile = () => {
   const onProfileSubmit = async (data: z.infer<typeof profileFormSchema>) => {
     setIsProfileUpdating(true);
     try {
-      // In a real application, you would call a function to update the user profile
-      // For now, let's just simulate a successful profile update
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await updateUserProfile(data);
       toast.success("Profile updated successfully");
     } catch (error) {
       console.error("Error updating profile:", error);
@@ -121,14 +133,52 @@ const Profile = () => {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
       <div className="flex flex-col items-center justify-center space-y-2">
-        <Avatar className="h-24 w-24">
-          <AvatarImage src={undefined} alt={userProfile.name || "User"} />
-          <AvatarFallback className="text-xl">
-            {userProfile.name
-              ? userProfile.name.charAt(0).toUpperCase()
-              : "U"}
-          </AvatarFallback>
-        </Avatar>
+        <div className="relative">
+          <Avatar className="h-24 w-24">
+            <AvatarImage src={userProfile.photoURL || undefined} alt={userProfile.name || "User"} />
+            <AvatarFallback className="text-xl">
+              {userProfile.name
+                ? userProfile.name.charAt(0).toUpperCase()
+                : "U"}
+            </AvatarFallback>
+          </Avatar>
+          {isUploadingImage && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-white"></div>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+
+              try {
+                setIsUploadingImage(true);
+                await updateProfilePicture(file);
+                toast.success("Profile picture updated successfully");
+              } catch (error) {
+                toast.error("Failed to update profile picture");
+                console.error(error);
+              } finally {
+                setIsUploadingImage(false);
+              }
+            }}
+            className="hidden"
+            id="profile-picture-input"
+            disabled={isUploadingImage}
+          />
+          <Button
+            variant="outline"
+            onClick={() => document.getElementById("profile-picture-input")?.click()}
+            disabled={isUploadingImage}
+          >
+            Change Picture
+          </Button>
+        </div>
         <h1 className="text-2xl font-bold">{userProfile.name}</h1>
         <p className="text-muted-foreground">{userProfile.email}</p>
       </div>
@@ -251,6 +301,78 @@ const Profile = () => {
                       </FormItem>
                     )}
                   />
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium">Bank Details</h3>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowBankDetails(!showBankDetails)}
+                      >
+                        {showBankDetails ? "Hide" : "Show"} Bank Details
+                      </Button>
+                    </div>
+
+                    <div className={showBankDetails ? "" : "hidden"}>
+                      <FormField
+                        control={profileForm.control}
+                        name="bankDetails.accountName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Account Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={profileForm.control}
+                        name="bankDetails.accountNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Account Number</FormLabel>
+                            <FormControl>
+                              <Input {...field} type="password" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={profileForm.control}
+                        name="bankDetails.ifscCode"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>IFSC Code</FormLabel>
+                            <FormControl>
+                              <Input {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={profileForm.control}
+                        name="bankDetails.bankName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Bank Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex justify-end">
                     <Button type="submit" disabled={isProfileUpdating}>
                       {isProfileUpdating ? "Saving..." : "Save Changes"}

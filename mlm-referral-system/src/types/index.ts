@@ -1,10 +1,22 @@
 import { Timestamp, FieldValue } from "firebase/firestore";
 
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  read: boolean;
+  createdAt: Date;
+  link?: string;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   phone: string;
+  address?: string;
   createdAt: Date;
   updatedAt: Date;
   lastLogin: Date;
@@ -21,6 +33,24 @@ export interface User {
   sponsorIncome: number;
   profitShare: number;
   level: number;
+  photoURL?: string;
+  notifications?: Notification[];
+  unreadNotifications: number;
+  achievements: {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+    unlockedAt: Date;
+  }[];
+  points: number;
+  rank: string;
+  bankDetails?: {
+    accountName: string;
+    accountNumber: string;
+    ifscCode: string;
+    bankName: string;
+  };
 }
 
 export type UserProfile = {
@@ -93,8 +123,8 @@ export interface WithdrawalRequest {
     bankName: string;
   };
   status: "pending" | "approved" | "rejected";
-  createdAt: Date;
-  processedAt?: Date | null;
+  createdAt: Timestamp;
+  processedAt?: Timestamp | null;
   processedBy?: string;
   remarks?: string;
   transactionId?: string;

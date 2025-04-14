@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { collection, doc, getDoc, Timestamp, addDoc } from "firebase/firestore";
+import { collection, doc, getDoc, Timestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { formatCurrency } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -19,28 +19,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAllWithdrawalRequests, updateWithdrawalRequest, updateWallet } from "@/services/firebaseService";
-import { sendTransactionNotifications } from "@/services/notificationService";
+import { createInAppNotification } from "@/services/notificationService";
 import { Clock, CheckCircle2, XCircle, IndianRupee } from "lucide-react";
-
-type WithdrawalRequest = {
-  id: string;
-  userId: string;
-  userName?: string;
-  userEmail?: string;
-  amount: number;
-  accountDetails: {
-    accountName: string;
-    accountNumber: string;
-    ifscCode: string;
-    bankName: string;
-  };
-  status: "pending" | "approved" | "rejected";
-  createdAt: Date;
-  processedAt?: Date | null;
-  processedBy?: string;
-  remarks?: string;
-  transactionId?: string;
-};
+import type { WithdrawalRequest } from "@/types";
 
 export default function WithdrawalRequests() {
   const [requests, setRequests] = useState<WithdrawalRequest[]>([]);
@@ -83,7 +64,7 @@ export default function WithdrawalRequests() {
       // Update withdrawal request
       await updateWithdrawalRequest(selectedRequest.id, {
         status,
-        processedAt: Timestamp.now(),
+        processedAt: Timestamp.fromDate(new Date()),
         processedBy: currentUser.uid,
         remarks,
         ...(status === "approved" ? { transactionId } : {}),
@@ -102,12 +83,20 @@ export default function WithdrawalRequests() {
         withdrawalRequestId: selectedRequest.id,
       };
 
-      const transactionRef = await addDoc(collection(db, "transactions"), transactionData);
-
-      // Send notifications
-      await sendTransactionNotifications({
-        id: transactionRef.id,
+      const transactionRef = doc(collection(db, "transactions"));
+      await setDoc(transactionRef, {
         ...transactionData,
+        id: transactionRef.id
+      });
+
+      // Create in-app notification
+      await createInAppNotification({
+        userId: selectedRequest.userId,
+        title: `Withdrawal Request ${status}`,
+        message: status === "approved" 
+          ? `Your withdrawal request for ${formatCurrency(selectedRequest.amount)} has been approved. Transaction ID: ${transactionId}` 
+          : `Your withdrawal request for ${formatCurrency(selectedRequest.amount)} has been rejected. Reason: ${remarks}`,
+        type: status === "approved" ? "success" : "error",
       });
 
       if (status === "approved") {
@@ -135,9 +124,9 @@ export default function WithdrawalRequests() {
             totalInvested: walletData.totalInvested || 0,
             totalIncome: walletData.totalIncome || 0,
             levelIncome: walletData.levelIncome || 0,
-            referralIncome: walletData.referralIncome || 0,
-            profitIncome: walletData.profitIncome || 0,
-            lastUpdated: Timestamp.now()
+            sponsorIncome: walletData.sponsorIncome || 0,
+            profitShare: walletData.profitShare || 0,
+            lastUpdated: Timestamp.fromDate(new Date())
           });
 
           // Create refund transaction
