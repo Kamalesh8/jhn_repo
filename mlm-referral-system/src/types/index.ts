@@ -7,49 +7,57 @@ export interface Notification {
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
   read: boolean;
-  createdAt: Date;
+  createdAt: Timestamp;
   link?: string;
+}
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  progress: number;
+  total: number;
+  completed: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 export interface User {
   id: string;
   name: string;
+  displayName: string;
   email: string;
   phone: string;
-  address?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  lastLogin: Date;
-  lastActivity: Date;
   isAdmin: boolean;
   status: string;
   referralId: string;
   sponsorId: string | null;
   sponsorReferralId: string | null;
-  // MLM specific fields
   directReferrals: number;
   totalTeamSize: number;
   levelIncome: number;
   sponsorIncome: number;
   profitShare: number;
   level: number;
-  photoURL?: string;
-  notifications?: Notification[];
+  balance: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  lastLogin: Timestamp;
+  lastActivity: Timestamp;
   unreadNotifications: number;
-  achievements: {
-    id: string;
-    name: string;
-    description: string;
-    icon: string;
-    unlockedAt: Date;
-  }[];
+  achievements: Achievement[];
   points: number;
   rank: string;
+  role?: string;
+  avatar?: string;
+  photoURL?: string;
+  address?: string;
+  profilePicture?: string;
   bankDetails?: {
-    accountName: string;
     accountNumber: string;
-    ifscCode: string;
     bankName: string;
+    ifscCode: string;
+    accountHolderName: string;
   };
 }
 
@@ -62,8 +70,8 @@ export type UserProfile = {
   walletId: string;
   downlineCount: number;
   isAdmin: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
   totalInvested: number;
   totalIncome: number;
   levelIncome: number;
@@ -72,8 +80,8 @@ export type UserProfile = {
   balance: number;
   level: number;
   status: string;
-  lastLogin: Date;
-  lastActivity: Date;
+  lastLogin: Timestamp;
+  lastActivity: Timestamp;
   phone?: string;
   address?: string;
   profilePicture?: string;
@@ -87,7 +95,8 @@ export interface Transaction {
   amount: number;
   description: string;
   status: "pending" | "completed" | "failed";
-  createdAt: Date;
+  createdAt: Timestamp;
+  processedAt: Timestamp | null;
 }
 
 export interface Referral {
@@ -95,19 +104,23 @@ export interface Referral {
   sponsorId: string;
   userId: string;
   level: number;
-  createdAt: Date;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 };
 
-export type Wallet = {
+export interface Wallet {
   id: string;
   userId: string;
+  balance: number;
+  totalEarnings: number;
+  totalWithdrawals: number;
   totalInvested: number;
-  totalIncome: number;
   levelIncome: number;
   sponsorIncome: number;
   profitShare: number;
-  balance: number;
   lastUpdated: Timestamp | FieldValue;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 };
 
 export interface WithdrawalRequest {
@@ -124,7 +137,7 @@ export interface WithdrawalRequest {
   };
   status: "pending" | "approved" | "rejected";
   createdAt: Timestamp;
-  processedAt?: Timestamp | null;
+  processedAt: Timestamp | null;
   processedBy?: string;
   remarks?: string;
   transactionId?: string;
@@ -143,7 +156,7 @@ export interface SystemSettings {
   minDepositAmount: number;
   minWithdrawalAmount: number;
   maxWithdrawalAmount: number;
-  lastUpdated: Date;
+  lastUpdated: Timestamp;
 }
 
 export interface DashboardData {

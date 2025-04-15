@@ -1,7 +1,12 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { ReactNode } from "react";
 
-export default function AdminRoute() {
+interface AdminRouteProps {
+  children: ReactNode;
+}
+
+const AdminRoute = ({ children }: AdminRouteProps) => {
   const { currentUser, loading, isAdmin, userProfile } = useAuth();
 
   // Show loading state while checking auth
@@ -24,5 +29,7 @@ export default function AdminRoute() {
   }
 
   // If everything is ok, render admin routes
-  return <Outlet />;
-}
+  return <>{children}</>;
+};
+
+export default AdminRoute;

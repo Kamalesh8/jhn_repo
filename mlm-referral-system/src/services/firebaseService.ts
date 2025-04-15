@@ -14,9 +14,12 @@ import {
   type DocumentData,
   type QueryDocumentSnapshot,
   serverTimestamp,
-  increment
+  increment,
+  documentId,
+  FieldValue,
+  DocumentSnapshot
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db } from "../lib/firebase";
 import {
   type User,
   type Transaction,
@@ -26,33 +29,148 @@ import {
   type SystemSettings,
   LevelCommission,
   type DashboardData
-} from "@/types";
+} from "../types";
 
 // Helper function to convert Firestore timestamp to Date
 export function convertTimestampToDate<T extends Record<string, any>>(
-  doc: QueryDocumentSnapshot<T>
+  doc: QueryDocumentSnapshot<DocumentData>
 ): T {
   const data = doc.data();
-  const result: any = {};
-  
-  Object.entries(data).forEach(([key, value]) => {
-    if (value instanceof Timestamp) {
-      result[key] = value.toDate();
-    } else {
-      result[key] = value;
+  const result: Record<string, any> = {
+    ...data,
+    id: doc.id,
+  };
+
+  // Convert all Timestamp fields to Date objects
+  Object.keys(result).forEach((key) => {
+    if (result[key] instanceof Timestamp) {
+      result[key] = result[key].toDate();
     }
   });
 
   return result as T;
 }
 
+// Helper function to convert Date to Timestamp
+function dateToTimestamp(date: Date | null | undefined): Timestamp {
+  if (date instanceof Date) {
+    return Timestamp.fromDate(date);
+  }
+  return Timestamp.now();
+}
+
+// Helper function to convert Timestamp to Date
+function timestampToDate(timestamp: Timestamp | null | undefined): Date {
+  if (timestamp instanceof Timestamp) {
+    return timestamp.toDate();
+  }
+  return new Date();
+}
+
+// Helper function to convert document data
+export function convertDocData<T>(doc: any): T {
+  const data = doc.data();
+  return {
+    ...data,
+    id: doc.id,
+  } as T;
+}
+
+// Helper function to convert document data to User type
+function convertToUser(doc: DocumentSnapshot<DocumentData>): User {
+  const data = doc.data();
+  if (!data) {
+    throw new Error("Document data is undefined");
+  }
+  return {
+    id: doc.id,
+    name: data.name || "",
+    displayName: data.displayName || data.name || "",
+    email: data.email || "",
+    phone: data.phone || "",
+    isAdmin: data.isAdmin || false,
+    status: data.status || "active",
+    referralId: data.referralId || "",
+    sponsorId: data.sponsorId || null,
+    sponsorReferralId: data.sponsorReferralId || null,
+    directReferrals: data.directReferrals || 0,
+    totalTeamSize: data.totalTeamSize || 0,
+    levelIncome: data.levelIncome || 0,
+    sponsorIncome: data.sponsorIncome || 0,
+    profitShare: data.profitShare || 0,
+    level: data.level || 0,
+    balance: data.balance || 0,
+    createdAt: data.createdAt || Timestamp.now(),
+    updatedAt: data.updatedAt || Timestamp.now(),
+    lastLogin: data.lastLogin || Timestamp.now(),
+    lastActivity: data.lastActivity || Timestamp.now(),
+    unreadNotifications: data.unreadNotifications || 0,
+    achievements: data.achievements || [],
+    points: data.points || 0,
+    rank: data.rank || "Beginner",
+    role: data.role,
+    avatar: data.avatar,
+    photoURL: data.photoURL,
+    address: data.address,
+    profilePicture: data.profilePicture,
+    bankDetails: data.bankDetails || {
+      accountNumber: "",
+      bankName: "",
+      ifscCode: "",
+      accountHolderName: ""
+    }
+  };
+}
+
+// Helper function to convert document data to Transaction type
+function convertToTransaction(doc: DocumentSnapshot<DocumentData>): Transaction {
+  const data = doc.data();
+  if (!data) {
+    throw new Error("Document data is undefined");
+  }
+  return {
+    id: doc.id,
+    userId: data.userId || "",
+    userName: data.userName || "",
+    type: data.type || "unknown",
+    amount: data.amount || 0,
+    description: data.description || "",
+    status: data.status || "pending",
+    createdAt: data.createdAt || Timestamp.now(),
+    processedAt: data.processedAt || null
+  };
+}
+
+// Helper function to convert document data to WithdrawalRequest type
+function convertToWithdrawalRequest(doc: DocumentSnapshot<DocumentData>): WithdrawalRequest {
+  const data = doc.data();
+  if (!data) {
+    throw new Error("Document data is undefined");
+  }
+  return {
+    id: doc.id,
+    userId: data.userId || "",
+    userName: data.userName || "",
+    userEmail: data.userEmail || "",
+    amount: data.amount || 0,
+    accountDetails: data.accountDetails || {
+      accountNumber: "",
+      bankName: "",
+      ifscCode: "",
+      accountHolderName: ""
+    },
+    status: data.status || "pending",
+    createdAt: timestampToDate(data.createdAt),
+    processedAt: timestampToDate(data.processedAt),
+    processedBy: data.processedBy || null,
+    remarks: data.remarks || null,
+    transactionId: data.transactionId || null
+  };
+}
+
 // User related services
 export async function getUserByReferralId(referralId: string): Promise<User | null> {
   try {
-    if (!referralId) {
-      throw new Error("Referral ID is required");
-    }
-
     const usersRef = collection(db, "users");
     const q = query(usersRef, where("referralId", "==", referralId));
     const querySnapshot = await getDocs(q);
@@ -61,17 +179,7 @@ export async function getUserByReferralId(referralId: string): Promise<User | nu
       return null;
     }
 
-    const userDoc = querySnapshot.docs[0];
-    const userData = userDoc.data();
-
-    if (!userData) {
-      throw new Error("User data is empty");
-    }
-
-    return {
-      id: userDoc.id,
-      ...userData
-    } as User;
+    return convertToUser(querySnapshot.docs[0]);
   } catch (error) {
     console.error("Error getting user by referral ID:", error);
     throw error;
@@ -87,11 +195,7 @@ export async function getUserById(userId: string): Promise<User | null> {
       return null;
     }
 
-    const userData = userDoc.data();
-    return {
-      id: userDoc.id,
-      ...userData
-    } as User;
+    return convertToUser(userDoc);
   } catch (error) {
     console.error("Error getting user by ID:", error);
     throw error;
@@ -101,18 +205,15 @@ export async function getUserById(userId: string): Promise<User | null> {
 // Wallet services
 export async function getWalletByUserId(userId: string): Promise<Wallet | null> {
   try {
-    const walletRef = doc(db, "wallets", userId);
-    const walletDoc = await getDoc(walletRef);
+    const walletsRef = collection(db, "wallets");
+    const q = query(walletsRef, where("userId", "==", userId), limit(1));
+    const snapshot = await getDocs(q);
 
-    if (!walletDoc.exists()) {
+    if (snapshot.empty) {
       return null;
     }
 
-    const walletData = walletDoc.data();
-    return {
-      id: walletDoc.id,
-      ...walletData
-    } as Wallet;
+    return convertDocData<Wallet>(snapshot.docs[0]);
   } catch (error) {
     console.error("Error getting wallet:", error);
     throw error;
@@ -133,52 +234,88 @@ export async function updateWallet(wallet: Wallet): Promise<void> {
 }
 
 // Transaction services
-export async function createTransaction(transaction: Omit<Transaction, "id" | "createdAt">): Promise<Transaction> {
+export async function createTransaction(
+  userId: string,
+  userName: string,
+  type: string,
+  amount: number,
+  description: string
+): Promise<Transaction> {
   try {
-    const timestamp = serverTimestamp();
-    const transactionRef = await addDoc(collection(db, "transactions"), {
-      ...transaction,
-      createdAt: timestamp
-    });
-
-    // Get the actual document to return the proper date
-    const transactionDoc = await getDoc(transactionRef);
-    const transactionData = transactionDoc.data();
-
-    return {
-      id: transactionRef.id,
-      ...transaction,
-      createdAt: transactionData?.createdAt instanceof Timestamp ? transactionData.createdAt.toDate() : new Date()
+    const transactionData = {
+      userId,
+      userName,
+      type,
+      amount,
+      description,
+      status: "completed",
+      createdAt: Timestamp.now(),
+      processedAt: Timestamp.now()
     };
+
+    const transactionRef = await addDoc(collection(db, "transactions"), transactionData);
+    const doc = await getDoc(transactionRef);
+    return convertToTransaction(doc);
   } catch (error) {
     console.error("Error creating transaction:", error);
     throw error;
   }
 }
 
+// Cache for transactions
+const transactionsCache = new Map<string, { data: Transaction[]; timestamp: number }>();
+const TRANSACTIONS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 export async function getTransactionsByUserId(userId: string): Promise<Transaction[]> {
+  // Check cache first
+  const cached = transactionsCache.get(userId);
+  const now = Date.now();
+  if (cached && now - cached.timestamp < TRANSACTIONS_CACHE_DURATION) {
+    return cached.data;
+  }
+
   try {
-    const transactionsRef = collection(db, "transactions");
     const q = query(
-      transactionsRef,
-      where("userId", "==", userId)
+      collection(db, "transactions"),
+      where("userId", "==", userId),
+      orderBy("createdAt", "desc"),
+      limit(100) // Limit to last 100 transactions to reduce quota usage
     );
-    const querySnapshot = await getDocs(q);
-
-    // Sort transactions by createdAt in memory
-    const transactions = querySnapshot.docs
-      .map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Transaction[];
-
-    return transactions.sort((a, b) => {
-      const dateA = a.createdAt instanceof Timestamp ? a.createdAt.toDate() : new Date(a.createdAt);
-      const dateB = b.createdAt instanceof Timestamp ? b.createdAt.toDate() : new Date(b.createdAt);
-      return dateB.getTime() - dateA.getTime();
-    });
-  } catch (error) {
+    const snapshot = await getDocs(q);
+    const transactions = snapshot.docs.map(doc => convertToTransaction(doc));
+    
+    // Update cache
+    transactionsCache.set(userId, { data: transactions, timestamp: now });
+    return transactions;
+  } catch (error: any) {
     console.error("Error getting transactions:", error);
+    
+    // If quota exceeded, return cached data if available
+    if (error.code === 'resource-exhausted' && cached) {
+      console.log('Using cached transactions due to quota limit');
+      return cached.data;
+    }
+    
+    // If no cache and quota exceeded, return empty array with a specific error
+    if (error.code === 'resource-exhausted') {
+      console.log('No cached data available and quota exceeded');
+      return [];
+    }
+    
+    throw error;
+  }
+}
+
+export async function getAllTransactions(): Promise<Transaction[]> {
+  try {
+    const q = query(
+      collection(db, "transactions"),
+      orderBy("createdAt", "desc")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => convertToTransaction(doc));
+  } catch (error) {
+    console.error("Error getting all transactions:", error);
     throw error;
   }
 }
@@ -217,10 +354,7 @@ export async function getReferralsByUserId(userId: string): Promise<Referral[]> 
     );
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as Referral[];
+    return querySnapshot.docs.map(doc => convertDocData<Referral>(doc));
   } catch (error) {
     console.error("Error getting referrals:", error);
     throw error;
@@ -278,181 +412,94 @@ export async function updateTeamSize(userId: string, cache = new Map<string, num
   }
 }
 
+// Cache for downline users
+const downlineUsersCache = new Map<string, { users: User[]; timestamp: Timestamp }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 // Function to get direct downline users for a user
-export async function getDownlineUsers(userId: string): Promise<User[]> {
+export async function getDownlineUsers(userId: string, retryCount = 0): Promise<User[]> {
+  // Check cache first
+  const cachedData = downlineUsersCache.get(userId);
+  if (cachedData) {
+    const now = Timestamp.now();
+    if (now.toMillis() - cachedData.timestamp.toMillis() < CACHE_DURATION) {
+      return cachedData.users;
+    }
+  }
+
   try {
-    console.log(`Fetching downline users for user: ${userId}`);
-
+    // Get referrals where sponsorId matches userId
     const referralsRef = collection(db, "referrals");
-    const referralsQuery = query(
-      referralsRef,
-      where("sponsorId", "==", userId)
-    );
-    const referralsSnapshot = await getDocs(referralsQuery);
-    
-    console.log(`Found ${referralsSnapshot.size} direct referrals for user`);
+    const q = query(referralsRef, where("sponsorId", "==", userId));
+    const referralDocs = await getDocs(q);
 
-    const userPromises = referralsSnapshot.docs.map(async (referralDoc) => {
-      const referralData = referralDoc.data();
-      console.log(`Processing referral: ${JSON.stringify(referralData)}`);
+    // Extract user IDs from referrals
+    const userIds = referralDocs.docs.map(doc => doc.data().userId);
 
-      const userDoc = await getDoc(doc(db, "users", referralData.userId));
-      
-      if (!userDoc.exists()) {
-        console.log(`User not found for referral: ${referralData.userId}`);
-        return null;
-      }
+    // If no referrals found, return empty array
+    if (userIds.length === 0) {
+      return [];
+    }
 
-      const userData = userDoc.data() as User;
-      console.log(`User data: ${JSON.stringify(userData)}`);
+    // Get user documents for all referral user IDs
+    const usersRef = collection(db, "users");
+    const userQuery = query(usersRef, where(documentId(), "in", userIds));
+    const userDocs = await getDocs(userQuery);
 
-      return {
-        id: userDoc.id,
-        name: userData.name || "",
-        email: userData.email || "",
-        phone: userData.phone || "",
-        isAdmin: userData.isAdmin || false,
-        status: userData.status || "active",
-        referralId: userData.referralId || "",
-        sponsorId: userData.sponsorId || null,
-        sponsorReferralId: userData.sponsorReferralId || null,
-        directReferrals: userData.directReferrals || 0,
-        totalTeamSize: userData.totalTeamSize || 0,
-        levelIncome: userData.levelIncome || 0,
-        sponsorIncome: userData.sponsorIncome || 0,
-        profitShare: userData.profitShare || 0,
-        level: userData.level || 0,
-        createdAt: userData.createdAt instanceof Timestamp ? userData.createdAt.toDate() : new Date(),
-        updatedAt: userData.updatedAt instanceof Timestamp ? userData.updatedAt.toDate() : new Date(),
-        lastLogin: userData.lastLogin instanceof Timestamp ? userData.lastLogin.toDate() : new Date(),
-        lastActivity: userData.lastActivity instanceof Timestamp ? userData.lastActivity.toDate() : new Date()
-      };
-    });
+    const users = userDocs.docs.map(doc => convertToUser(doc));
 
-    const downlineUsers = await Promise.all(userPromises);
-    const validUsers = downlineUsers.filter((user): user is User => user !== null);
+    // Update cache
+    downlineUsersCache.set(userId, { users, timestamp: Timestamp.now() });
 
-    console.log(`Total valid downline users: ${validUsers.length}`);
-
-    // Update the sponsor's direct referrals count
-    const userRef = doc(db, "users", userId);
-    await updateDoc(userRef, {
-      directReferrals: validUsers.length,
-      updatedAt: serverTimestamp()
-    });
-
-    return validUsers;
+    return users;
   } catch (error) {
     console.error("Error getting downline users:", error);
+    
+    // Implement exponential backoff for retries
+    if (retryCount < 3) {
+      const delay = Math.pow(2, retryCount) * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return getDownlineUsers(userId, retryCount + 1);
+    }
+    
     throw error;
   }
 }
 
 // Function to get all downline users for a user (including indirect downlines)
 export async function getAllDownlineUsers(userId: string): Promise<User[]> {
-  try {
-    const referralsRef = collection(db, "referrals");
-    const referralsQuery = query(
-      referralsRef,
-      where("sponsorId", "==", userId)
-    );
-    const referralsSnapshot = await getDocs(referralsQuery);
-    
-    const userPromises = referralsSnapshot.docs.map(async (referralDoc) => {
-      const referralData = referralDoc.data();
-      const userDoc = await getDoc(doc(db, "users", referralData.userId));
-      
-      if (!userDoc.exists()) {
-        return null;
-      }
+  const allUsers = new Set<User>();
+  const processedIds = new Set<string>();
 
-      const userData = userDoc.data() as User;
-      return {
-        id: userDoc.id,
-        name: userData.name || "",
-        email: userData.email || "",
-        phone: userData.phone || "",
-        isAdmin: userData.isAdmin || false,
-        status: userData.status || "active",
-        referralId: userData.referralId || "",
-        sponsorId: userData.sponsorId || null,
-        sponsorReferralId: userData.sponsorReferralId || null,
-        directReferrals: userData.directReferrals || 0,
-        totalTeamSize: userData.totalTeamSize || 0,
-        levelIncome: userData.levelIncome || 0,
-        sponsorIncome: userData.sponsorIncome || 0,
-        profitShare: userData.profitShare || 0,
-        level: userData.level || 0,
-        createdAt: userData.createdAt instanceof Timestamp ? userData.createdAt.toDate() : new Date(),
-        updatedAt: userData.updatedAt instanceof Timestamp ? userData.updatedAt.toDate() : new Date(),
-        lastLogin: userData.lastLogin instanceof Timestamp ? userData.lastLogin.toDate() : new Date(),
-        lastActivity: userData.lastActivity instanceof Timestamp ? userData.lastActivity.toDate() : new Date()
-      } as User;
-    });
-
-    const directDownline = await Promise.all(userPromises);
-    const validDownline = directDownline.filter((user): user is User => user !== null);
-
-    // Instead of recursive query, use the totalTeamSize from user profile
-    const userDoc = await getDoc(doc(db, "users", userId));
-    if (!userDoc.exists()) {
-      return validDownline;
+  async function processUser(id: string) {
+    if (processedIds.has(id)) {
+      return;
     }
 
-    const userData = userDoc.data() as User;
-    const totalTeamSize = userData.totalTeamSize || 0;
-    
-    // If totalTeamSize is greater than direct downlines, we have indirect downlines
-    if (totalTeamSize > validDownline.length) {
-      // Since we can't query recursively, we'll just return the direct downlines
-      // The total team size will be shown from the user profile
-      return validDownline;
-    }
+    processedIds.add(id);
+    const users = await getDownlineUsers(id);
 
-    return validDownline;
-  } catch (error) {
-    console.error("Error getting all downline users:", error);
-    throw error;
+    for (const user of users) {
+      allUsers.add(user);
+      await processUser(user.id);
+    }
   }
+
+  await processUser(userId);
+  return Array.from(allUsers);
 }
 
 // Withdrawal request services
 export async function getWithdrawalRequestsByUserId(userId: string): Promise<WithdrawalRequest[]> {
   try {
-    const requestsRef = collection(db, "withdrawalRequests");
     const q = query(
-      requestsRef,
-      where("userId", "==", userId)
+      collection(db, "withdrawalRequests"),
+      where("userId", "==", userId),
+      orderBy("createdAt", "desc")
     );
-    const querySnapshot = await getDocs(q);
+    const snapshot = await getDocs(q);
 
-    const withdrawalRequests: WithdrawalRequest[] = [];
-
-    for (const docSnapshot of querySnapshot.docs) {
-      const data = docSnapshot.data();
-      const request: WithdrawalRequest = {
-        id: docSnapshot.id,
-        userId: data.userId,
-        userName: data.userName || "Unknown User",
-        userEmail: data.userEmail || "",
-        amount: data.amount,
-        accountDetails: data.accountDetails || {},
-        status: data.status,
-        createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(),
-        processedAt: data.processedAt instanceof Timestamp ? data.processedAt.toDate() : null,
-        processedBy: data.processedBy || "",
-        remarks: data.remarks || "",
-        transactionId: data.transactionId || ""
-      };
-      withdrawalRequests.push(request);
-    }
-
-    // Sort requests by createdAt in memory
-    return withdrawalRequests.sort((a, b) => {
-      const dateA = a.createdAt;
-      const dateB = b.createdAt;
-      return dateB.getTime() - dateA.getTime();
-    });
+    return snapshot.docs.map(doc => convertToWithdrawalRequest(doc));
   } catch (error) {
     console.error("Error getting withdrawal requests:", error);
     throw error;
@@ -460,17 +507,36 @@ export async function getWithdrawalRequestsByUserId(userId: string): Promise<Wit
 }
 
 // Function to create withdrawal request
-export async function createWithdrawalRequest(withdrawalRequest: Omit<WithdrawalRequest, 'id' | 'createdAt' | 'processedAt'>): Promise<string> {
+export async function createWithdrawalRequest(
+  userId: string,
+  userName: string,
+  userEmail: string,
+  amount: number,
+  accountDetails: {
+    accountNumber: string;
+    bankName: string;
+    ifscCode: string;
+    accountHolderName: string;
+  }
+): Promise<WithdrawalRequest> {
   try {
-    const withdrawalRequestsRef = collection(db, "withdrawalRequests");
-    const docRef = await addDoc(withdrawalRequestsRef, {
-      ...withdrawalRequest,
-      createdAt: serverTimestamp(),
+    const withdrawalData = {
+      userId,
+      userName,
+      userEmail,
+      amount,
+      accountDetails,
+      status: "pending",
+      createdAt: Timestamp.now(),
       processedAt: null,
-      status: "pending"
-    });
+      processedBy: null,
+      remarks: null,
+      transactionId: null
+    };
 
-    return docRef.id;
+    const withdrawalRef = await addDoc(collection(db, "withdrawalRequests"), withdrawalData);
+    const doc = await getDoc(withdrawalRef);
+    return convertToWithdrawalRequest(doc);
   } catch (error) {
     console.error("Error creating withdrawal request:", error);
     throw error;
@@ -478,12 +544,19 @@ export async function createWithdrawalRequest(withdrawalRequest: Omit<Withdrawal
 }
 
 // Function to update withdrawal request
-export async function updateWithdrawalRequest(requestId: string, data: Partial<WithdrawalRequest>): Promise<void> {
+export async function updateWithdrawalRequest(
+  requestId: string,
+  status: string,
+  remarks: string,
+  processedBy: string
+): Promise<void> {
   try {
-    const requestRef = doc(db, "withdrawalRequests", requestId);
-    await updateDoc(requestRef, {
-      ...data,
-      updatedAt: serverTimestamp()
+    const withdrawalRef = doc(db, "withdrawalRequests", requestId);
+    await updateDoc(withdrawalRef, {
+      status,
+      remarks,
+      processedBy,
+      processedAt: Timestamp.now()
     });
   } catch (error) {
     console.error("Error updating withdrawal request:", error);
@@ -494,43 +567,12 @@ export async function updateWithdrawalRequest(requestId: string, data: Partial<W
 // Function to get all withdrawal requests
 export async function getAllWithdrawalRequests(): Promise<WithdrawalRequest[]> {
   try {
-    const requestsRef = collection(db, "withdrawalRequests");
-    const q = query(requestsRef, orderBy("createdAt", "desc"));
-    const querySnapshot = await getDocs(q);
-
-    const withdrawalRequests: WithdrawalRequest[] = [];
-
-    for (const docSnapshot of querySnapshot.docs) {
-      const data = docSnapshot.data();
-      const request: WithdrawalRequest = {
-        id: docSnapshot.id,
-        userId: data.userId,
-        userName: data.userName || "Unknown User",
-        userEmail: data.userEmail || "",
-        amount: data.amount,
-        accountDetails: data.accountDetails || {},
-        status: data.status,
-        createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(),
-        processedAt: data.processedAt instanceof Timestamp ? data.processedAt.toDate() : null,
-        processedBy: data.processedBy || "",
-        remarks: data.remarks || "",
-        transactionId: data.transactionId || ""
-      };
-
-      // Fetch user details
-      const userDoc = await getDoc(doc(db, "users", request.userId));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        if (userData) {
-          request.userName = userData.name || "Unknown User";
-          request.userEmail = userData.email || "";
-        }
-      }
-
-      withdrawalRequests.push(request);
-    }
-
-    return withdrawalRequests;
+    const q = query(
+      collection(db, "withdrawalRequests"),
+      orderBy("createdAt", "desc")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => convertToWithdrawalRequest(doc));
   } catch (error) {
     console.error("Error getting all withdrawal requests:", error);
     throw error;
@@ -574,10 +616,10 @@ export async function getDashboardData(): Promise<DashboardData> {
         ...userData,
         id: doc.id,
         sponsorName: sponsorName,
-        createdAt: userData.createdAt instanceof Timestamp ? userData.createdAt.toDate() : new Date(),
-        updatedAt: userData.updatedAt instanceof Timestamp ? userData.updatedAt.toDate() : new Date(),
-        lastLogin: userData.lastLogin instanceof Timestamp ? userData.lastLogin.toDate() : new Date(),
-        lastActivity: userData.lastActivity instanceof Timestamp ? userData.lastActivity.toDate() : new Date()
+        createdAt: timestampToDate(userData.createdAt),
+        updatedAt: timestampToDate(userData.updatedAt),
+        lastLogin: timestampToDate(userData.lastLogin),
+        lastActivity: timestampToDate(userData.lastActivity),
       } as User;
     });
 
@@ -643,8 +685,8 @@ export async function getDashboardData(): Promise<DashboardData> {
         amount: data.amount || 0,
         accountDetails: data.accountDetails || {},
         status: data.status || "pending",
-        createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(),
-        processedAt: data.processedAt instanceof Timestamp ? data.processedAt.toDate() : null,
+        createdAt: timestampToDate(data.createdAt),
+        processedAt: timestampToDate(data.processedAt),
         processedBy: data.processedBy || "",
         remarks: data.remarks || "",
         transactionId: data.transactionId || ""
@@ -668,7 +710,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         amount: data.amount || 0,
         description: data.description || "",
         status: data.status || "pending",
-        createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date()
+        createdAt: timestampToDate(data.createdAt)
       } as Transaction;
     });
 
@@ -685,6 +727,56 @@ export async function getDashboardData(): Promise<DashboardData> {
     };
   } catch (error) {
     console.error("Error fetching dashboard data:", error);
+    throw error;
+  }
+}
+
+// Function to update user
+export async function updateUser(userId: string, updateData: Partial<User>): Promise<void> {
+  try {
+    const userRef = doc(db, "users", userId);
+    const updatedData = {
+      ...updateData,
+      updatedAt: Timestamp.now()
+    };
+    await updateDoc(userRef, updatedData);
+  } catch (error) {
+    console.error("Error updating user:", error);
+    throw error;
+  }
+}
+
+// Function to create user
+export async function createUser(userData: Partial<User>): Promise<User> {
+  try {
+    const userRef = collection(db, "users");
+    const now = Timestamp.now();
+    const newUserData = {
+      ...userData,
+      createdAt: now,
+      updatedAt: now,
+      lastLogin: now,
+      lastActivity: now,
+      isAdmin: false,
+      status: "active",
+      directReferrals: 0,
+      totalTeamSize: 0,
+      levelIncome: 0,
+      sponsorIncome: 0,
+      profitShare: 0,
+      level: 0,
+      balance: 0,
+      unreadNotifications: 0,
+      achievements: [],
+      points: 0,
+      rank: "Beginner"
+    };
+
+    const docRef = await addDoc(userRef, newUserData);
+    const userDoc = await getDoc(docRef);
+    return convertToUser(userDoc);
+  } catch (error) {
+    console.error("Error creating user:", error);
     throw error;
   }
 }

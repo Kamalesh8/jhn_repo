@@ -1,17 +1,15 @@
 import { Link } from "react-router-dom";
-import { getUserNotifications, markNotificationAsRead } from "../../services/notificationService";
 import { useAuth } from "@/contexts/AuthContext";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { getWalletByUserId } from "@/services/firebaseService";
-import { useState, useEffect } from "react";
-import { formatCurrency } from "@/lib/utils";
 import {
+  Bell,
+  Search,
+  Settings,
   Menu,
-  BellIcon,
-  User as UserIcon
+  X,
+  MessageSquare,
+  HelpCircle,
 } from "lucide-react";
-import type { Wallet, Notification } from "@/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,141 +18,136 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 interface NavbarProps {
   toggleSidebar: () => void;
 }
 
-const Navbar = ({ toggleSidebar }: NavbarProps) => {
-  const { userProfile } = useAuth();
-  const [walletData, setWalletData] = useState<Wallet | null>(null);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+export default function Navbar({ toggleSidebar }: NavbarProps) {
+  const { userProfile, logout } = useAuth();
 
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      if (userProfile) {
-        try {
-          const userNotifications = await getUserNotifications(userProfile.id);
-          setNotifications(userNotifications);
-          setUnreadCount(userNotifications.filter(n => !n.read).length);
-        } catch (error) {
-          console.error("Error fetching notifications:", error);
-        }
-      }
-    };
-
-    fetchNotifications();
-  }, [userProfile]);
-
-  useEffect(() => {
-    const fetchWalletData = async () => {
-      if (userProfile) {
-        try {
-          const wallet = await getWalletByUserId(userProfile.id);
-          setWalletData(wallet);
-        } catch (error) {
-          console.error("Error fetching wallet data:", error);
-        }
-      }
-    };
-
-    fetchWalletData();
-  }, [userProfile]);
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
 
   return (
-    <header className="sticky top-0 z-10 border-b bg-white shadow-sm">
-      <div className="flex h-16 items-center justify-between px-4 md:px-6">
-        <div className="flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleSidebar}
-            className="mr-2 md:hidden"
-          >
-            <Menu className="h-5 w-5" />
-            <span className="sr-only">Toggle menu</span>
-          </Button>
-          <h1 className="text-lg font-medium md:text-xl">
-            Welcome, {userProfile?.name || "User"}
-          </h1>
-        </div>
+    <nav className="sticky top-0 z-40 w-full border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <div className="container mx-auto px-4">
+        <div className="flex h-16 items-center justify-between gap-4">
+          {/* Left side */}
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              className="lg:hidden"
+            >
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle sidebar</span>
+            </Button>
 
-        <div className="flex items-center gap-4">
-          <div className="hidden rounded-lg border bg-muted/50 p-2 md:block">
-            <div className="text-xs text-muted-foreground">Balance</div>
-            <div className="font-medium">
-              {walletData ? formatCurrency(walletData.balance) : "Loading..."}
+            {/* Search bar */}
+            <div className="hidden sm:block">
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <Search className="h-4 w-4 text-gray-400" />
+                </div>
+                <Input
+                  type="search"
+                  placeholder="Search..."
+                  className="w-[300px] pl-10"
+                />
+              </div>
             </div>
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="relative">
-                <BellIcon className="h-5 w-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white">
-                    {unreadCount}
-                  </span>
-                )}
-                <span className="sr-only">Notifications</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {notifications.length === 0 ? (
-                <div className="p-4 text-center text-sm text-gray-500">
-                  No notifications
-                </div>
-              ) : (
-                notifications.map((notification) => (
-                  <DropdownMenuItem
-                    key={notification.id}
-                    className={`flex flex-col items-start gap-1 p-4 ${!notification.read ? 'bg-blue-50' : ''}`}
-                    onClick={async () => {
-                      if (!notification.read) {
-                        await markNotificationAsRead(userProfile!.id, notification.id);
-                        setNotifications(prev =>
-                          prev.map(n =>
-                            n.id === notification.id ? { ...n, read: true } : n
-                          )
-                        );
-                        setUnreadCount(prev => prev - 1);
-                      }
-                      if (notification.link) {
-                        window.location.href = notification.link;
-                      }
-                    }}
-                  >
-                    <div className="font-medium">{notification.title}</div>
-                    <div className="text-sm text-gray-500">{notification.message}</div>
-                    <div className="text-xs text-gray-400">
-                      {new Date(notification.createdAt).toLocaleDateString()}
-                    </div>
-                  </DropdownMenuItem>
-                ))
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Right side */}
+          <div className="flex items-center gap-3 md:gap-4">
+            {/* Help */}
+            <Button variant="ghost" size="icon" className="hidden sm:flex">
+              <HelpCircle className="h-5 w-5 text-gray-500" />
+              <span className="sr-only">Help</span>
+            </Button>
 
-          <Link to="/profile">
-            <Avatar>
-              <AvatarImage
-                src={userProfile?.photoURL || undefined}
-                alt={userProfile?.name || "User"}
-              />
-              <AvatarFallback className="bg-primary text-primary-foreground">
-                {userProfile?.name
-                  ? userProfile.name.charAt(0).toUpperCase()
-                  : "U"}
-              </AvatarFallback>
-            </Avatar>
-          </Link>
+            {/* Messages */}
+            <Button variant="ghost" size="icon" className="relative">
+              <MessageSquare className="h-5 w-5 text-gray-500" />
+              <Badge
+                variant="destructive"
+                className="absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded-full p-0 text-xs"
+              >
+                3
+              </Badge>
+              <span className="sr-only">Messages</span>
+            </Button>
+
+            {/* Notifications */}
+            <Button variant="ghost" size="icon" className="relative">
+              <Bell className="h-5 w-5 text-gray-500" />
+              <Badge
+                variant="destructive"
+                className="absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded-full p-0 text-xs"
+              >
+                5
+              </Badge>
+              <span className="sr-only">Notifications</span>
+            </Button>
+
+            {/* Profile dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="relative h-8 w-8 select-none rounded-full bg-transparent p-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-2"
+                >
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage
+                      src={userProfile?.avatar}
+                      alt={userProfile?.name}
+                    />
+                    <AvatarFallback>
+                      {userProfile?.name?.charAt(0) || "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {userProfile?.name}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {userProfile?.email}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/dashboard/profile" className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-red-600 focus:bg-red-50 focus:text-red-600"
+                  onClick={handleLogout}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
-    </header>
+    </nav>
   );
-};
-
-export default Navbar;
+}

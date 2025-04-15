@@ -1,89 +1,47 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { getUserById, getDownlineUsers, getWalletByUserId } from "../services/firebaseService";
+import { User, Wallet } from "../types";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
+import { Progress } from "../components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import { Users, Activity, TrendingUp, IndianRupee, ArrowUpRight, ArrowDownRight, Award } from "lucide-react";
+import { auth, db } from "../lib/firebase";
+import { Button } from "../components/ui/button";
 import { Link } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
-import { 
-  getWalletByUserId, 
-  getDownlineUsers,
-  getTransactionsByUserId, 
-  getWithdrawalRequestsByUserId 
-} from "@/services/firebaseService";
-import { formatCurrency } from "@/lib/utils";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import type { Wallet, Transaction, User, WithdrawalRequest } from "@/types";
-import { Timestamp } from "firebase/firestore";
-import {
-  CurrencyDollarIcon,
-  ArrowDownIcon,
-  GiftIcon,
-  UserGroupIcon,
-  ClipboardIcon,
-  CheckIcon,
-  ClockIcon,
-  ExclamationCircleIcon,
-} from "@heroicons/react/24/outline";
 
 export default function Dashboard() {
-  const { userProfile, currentUser } = useAuth();
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
+  const { currentUser, userProfile } = useAuth();
   const [downlineUsers, setDownlineUsers] = useState<User[]>([]);
-  const [copied, setCopied] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!currentUser || !userProfile) {
-      setIsLoading(false);
-      return;
-    }
-
     let isMounted = true;
 
     const fetchData = async () => {
+      if (!currentUser?.uid || !userProfile) return;
+
       try {
-        // Fetch wallet data
-        const walletData = await getWalletByUserId(userProfile.id);
-        if (isMounted) setWallet(walletData);
-
-        // Fetch recent transactions
-        const recentTransactions = await getTransactionsByUserId(userProfile.id);
-        if (isMounted) {
-          setTransactions(
-            recentTransactions
-              .sort((a, b) => {
-                const aTime = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
-                const bTime = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : 0;
-                return bTime - aTime;
-              })
-              .slice(0, 10)
-          );
-        }
-
-        // Fetch withdrawal requests
-        const withdrawals = await getWithdrawalRequestsByUserId(userProfile.id);
-        if (isMounted) {
-          setWithdrawalRequests(
-            withdrawals
-              .sort((a, b) => {
-                const aTime = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
-                const bTime = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : 0;
-                return bTime - aTime;
-              })
-              .slice(0, 10)
-          );
-        }
+        setLoading(true);
+        setError(null);
 
         // Fetch downline users
         const users = await getDownlineUsers(userProfile.id);
         if (isMounted) setDownlineUsers(users);
 
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error);
+        // Fetch wallet
+        const walletData = await getWalletByUserId(userProfile.id);
+        if (isMounted) setWallet(walletData);
+
+      } catch (err) {
+        if (isMounted) {
+          console.error("Error fetching data:", err);
+          setError("Failed to load data. Please try again later.");
+        }
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
@@ -92,376 +50,261 @@ export default function Dashboard() {
     return () => {
       isMounted = false;
     };
-  }, [currentUser, userProfile]);
+  }, [currentUser?.uid, userProfile]);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
-  const copyReferralLink = () => {
-    if (!userProfile) return;
-    const referralLink = `${window.location.origin}/register?ref=${userProfile.referralId}`;
-    navigator.clipboard.writeText(referralLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-red-500 bg-red-50 p-4 rounded-lg shadow">
+          <p className="font-semibold">{error}</p>
+          <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
-  const formatDate = (date: Date | string | Timestamp | null | undefined) => {
-    if (!date) return "-";
-    if (date instanceof Timestamp) {
-      return date.toDate().toLocaleDateString();
+  if (!userProfile) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-gray-500 bg-gray-50 p-4 rounded-lg shadow">
+          <p className="font-semibold">No user profile found</p>
+          <Button variant="outline" className="mt-4" asChild>
+            <Link to="/profile">Complete Your Profile</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const stats = [
+    {
+      title: "Direct Referrals",
+      value: userProfile.directReferrals,
+      description: "Active direct referrals",
+      icon: Users,
+      trend: userProfile.directReferrals > 0 ? "up" : "neutral",
+      color: "blue",
+      progress: (userProfile.directReferrals / 10) * 100,
+      link: "/dashboard/referrals"
+    },
+    {
+      title: "Total Team Size",
+      value: userProfile.totalTeamSize,
+      description: "Total network size",
+      icon: Activity,
+      trend: userProfile.totalTeamSize > 0 ? "up" : "neutral",
+      color: "green",
+      link: "/dashboard/referrals"
+    },
+    {
+      title: "Available Balance",
+      value: `₹${wallet?.balance.toFixed(2) || "0.00"}`,
+      description: "Current wallet balance",
+      icon: IndianRupee,
+      trend: (wallet?.balance || 0) > 0 ? "up" : "neutral",
+      color: "yellow",
+      link: "/dashboard/transactions"
+    },
+    {
+      title: "Total Earnings",
+      value: `₹${(userProfile.levelIncome + userProfile.sponsorIncome + userProfile.profitShare).toFixed(2)}`,
+      description: "Combined earnings",
+      icon: TrendingUp,
+      trend: "up",
+      color: "purple",
+      link: "/dashboard/transactions"
     }
-    return new Date(date as string).toLocaleDateString();
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "completed":
-      case "approved":
-        return <Badge className="bg-green-500"><CheckIcon className="mr-1 h-3 w-3" /> {status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
-      case "pending":
-        return <Badge className="bg-yellow-500"><ClockIcon className="mr-1 h-3 w-3" /> Pending</Badge>;
-      case "failed":
-      case "rejected":
-        return <Badge className="bg-red-500"><ExclamationCircleIcon className="mr-1 h-3 w-3" /> {status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
-      default:
-        return <Badge>{status}</Badge>;
-    }
-  };
-
-  const getTransactionIcon = (type: string) => {
-    switch (type) {
-      case "deposit":
-        return <CurrencyDollarIcon className="h-5 w-5 text-green-500" />;
-      case "withdrawal":
-        return <ArrowDownIcon className="h-5 w-5 text-red-500" />;
-      case "level_income":
-        return <UserGroupIcon className="h-5 w-5 text-blue-500" />;
-      case "sponsor_income":
-        return <UserGroupIcon className="h-5 w-5 text-purple-500" />;
-      case "profit_share":
-        return <CurrencyDollarIcon className="h-5 w-5 text-amber-500" />;
-      default:
-        return <ClipboardIcon className="h-5 w-5 text-muted-foreground" />;
-    }
-  };
+  ];
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Team Size</CardTitle>
-            <UserGroupIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userProfile?.totalTeamSize || 0}</div>
-            <p className="text-xs text-muted-foreground">Total members in your team</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Direct Referrals</CardTitle>
-            <UserGroupIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userProfile?.directReferrals || 0}</div>
-            <p className="text-xs text-muted-foreground">Directly referred members</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Wallet Balance</CardTitle>
-            <CurrencyDollarIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(wallet?.balance || 0)}</div>
-            <p className="text-xs text-muted-foreground">
-              Total Invested: {formatCurrency(wallet?.totalInvested || 0)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Level Income</CardTitle>
-            <UserGroupIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(userProfile?.levelIncome || 0)}</div>
-            <p className="text-xs text-muted-foreground">
-              From {userProfile?.totalTeamSize || 0} team members
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Earnings</CardTitle>
-            <CurrencyDollarIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(
-                (userProfile?.levelIncome || 0) +
-                (userProfile?.sponsorIncome || 0) +
-                (userProfile?.profitShare || 0)
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              All earnings combined
-            </p>
-          </CardContent>
-        </Card>
+    <div className="container mx-auto p-6">
+      {/* Welcome Section */}
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Welcome back, {userProfile.name}!
+          </h1>
+          <p className="text-gray-500 mt-1">
+            Here's what's happening with your network today.
+          </p>
+        </div>
+        <div className="flex space-x-4">
+          <Button asChild>
+            <Link to="/dashboard/add-funds">Add Funds</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/dashboard/withdraw">Withdraw</Link>
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4">
-          <Tabs defaultValue="transactions">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {stats.map((stat, index) => (
+          <Link to={stat.link} key={index}>
+            <Card className="hover:shadow-lg transition-shadow duration-200">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">
+                  {stat.title}
+                </CardTitle>
+                <stat.icon className={`h-5 w-5 text-${stat.color}-500`} />
+              </CardHeader>
+              <CardContent>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="text-2xl font-bold">{stat.value}</div>
+                    <p className="text-xs text-gray-500 mt-1">{stat.description}</p>
+                  </div>
+                  {stat.trend === "up" && (
+                    <ArrowUpRight className="h-4 w-4 text-green-500" />
+                  )}
+                  {stat.trend === "down" && (
+                    <ArrowDownRight className="h-4 w-4 text-red-500" />
+                  )}
+                </div>
+                {stat.progress && (
+                  <Progress value={stat.progress} className="mt-4 h-1" />
+                )}
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+
+      {/* Tabs Section */}
+      <Tabs defaultValue="earnings" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="earnings">Earnings Breakdown</TabsTrigger>
+          <TabsTrigger value="referrals">Recent Referrals</TabsTrigger>
+          <TabsTrigger value="achievements">Achievements</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="earnings">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Level Income</CardTitle>
+                <CardDescription>Earnings from your network levels</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  ₹{userProfile.levelIncome.toFixed(2)}
+                </div>
+                <Progress value={75} className="mt-4" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Sponsor Income</CardTitle>
+                <CardDescription>Direct referral bonuses</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">
+                  ₹{userProfile.sponsorIncome.toFixed(2)}
+                </div>
+                <Progress value={60} className="mt-4" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Profit Share</CardTitle>
+                <CardDescription>Your share of system profits</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-purple-600">
+                  ₹{userProfile.profitShare.toFixed(2)}
+                </div>
+                <Progress value={40} className="mt-4" />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="referrals">
+          <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Activity History</CardTitle>
-                <TabsList>
-                  <TabsTrigger value="transactions">Transactions</TabsTrigger>
-                  <TabsTrigger value="withdrawals">Withdrawals</TabsTrigger>
-                </TabsList>
-              </div>
-              <CardDescription>
-                Your latest activities across all categories
-              </CardDescription>
+              <CardTitle>Recent Referrals</CardTitle>
+              <CardDescription>Your latest team members</CardDescription>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="flex h-[200px] items-center justify-center">
-                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                </div>
-              ) : (
-                <>
-                  <TabsContent value="transactions" className="space-y-4">
-                    {transactions.length > 0 ? (
-                      transactions.map((transaction) => (
-                        <div
-                          key={transaction.id}
-                          className="flex items-center justify-between space-x-4"
-                        >
-                          <div className="flex items-center space-x-4">
-                            <div className="rounded-full bg-muted p-2">
-                              {getTransactionIcon(transaction.type)}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium leading-none">
-                                {transaction.description}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {formatDate(transaction.createdAt)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="text-right">
-                              <p className="text-sm font-medium">
-                                {formatCurrency(transaction.amount)}
-                              </p>
-                            </div>
-                            {getStatusBadge(transaction.status)}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-center text-sm text-muted-foreground">
-                        No transactions found
+              <div className="space-y-4">
+                {downlineUsers.slice(0, 5).map((user, index) => (
+                  <div key={user.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-4">
+                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Users className="h-5 w-5 text-primary" />
                       </div>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="withdrawals" className="space-y-4">
-                    {withdrawalRequests.length > 0 ? (
-                      withdrawalRequests.map((request) => (
-                        <div
-                          key={request.id}
-                          className="flex items-center justify-between space-x-4"
-                        >
-                          <div className="flex items-center space-x-4">
-                            <div className="rounded-full bg-muted p-2">
-                              <ArrowDownIcon className="h-5 w-5 text-red-500" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium leading-none">
-                                Withdrawal Request
-                                {request.transactionId && (
-                                  <span className="ml-2 text-xs text-muted-foreground">
-                                    (ID: {request.transactionId})
-                                  </span>
-                                )}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {formatDate(request.createdAt)}
-                                {request.processedAt && (
-                                  <span className="ml-2 text-xs">
-                                    • Processed: {formatDate(request.processedAt)}
-                                  </span>
-                                )}
-                              </p>
-                              {request.remarks && (
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {request.remarks}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <div className="text-right">
-                              <p className="text-sm font-medium">
-                                {formatCurrency(request.amount)}
-                              </p>
-                            </div>
-                            {getStatusBadge(request.status)}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-center text-sm text-muted-foreground">
-                        No withdrawal requests found
+                      <div>
+                        <p className="font-medium">{user.name}</p>
+                        <p className="text-sm text-gray-500">Joined {new Date(user.createdAt.seconds * 1000).toLocaleDateString()}</p>
                       </div>
-                    )}
-                  </TabsContent>
-                </>
-              )}
-            </CardContent>
-          </Tabs>
-        </Card>
-
-        <Card className="col-span-3">
-          <CardHeader>
-            <CardTitle>Your Network</CardTitle>
-            <CardDescription>
-              Share your referral link to grow your network
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="rounded-lg border p-4">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Referral Link</p>
-                    <p className="text-xs text-muted-foreground break-all">
-                      {userProfile
-                        ? `${window.location.origin}/register?ref=${userProfile.referralId}`
-                        : "Loading..."}
-                    </p>
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Level {user.level}
+                    </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={copyReferralLink}
-                    className="shrink-0"
-                  >
-                    {copied ? (
-                      <CheckIcon className="h-4 w-4" />
-                    ) : (
-                      <ClipboardIcon className="h-4 w-4" />
-                    )}
+                ))}
+                {downlineUsers.length > 5 && (
+                  <Button variant="outline" className="w-full mt-4" asChild>
+                    <Link to="/dashboard/referrals">View All Referrals</Link>
                   </Button>
-                </div>
+                )}
+                {downlineUsers.length === 0 && (
+                  <div className="text-center py-6">
+                    <Users className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No Referrals Yet</h3>
+                    <p className="text-gray-500 mb-4">Start growing your network today!</p>
+                    <Button asChild>
+                      <Link to="/dashboard/referrals">Get Your Referral Link</Link>
+                    </Button>
+                  </div>
+                )}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-              <Tabs defaultValue="direct" className="w-full">
-                <TabsList className="w-full">
-                  <TabsTrigger value="direct" className="w-full">Direct</TabsTrigger>
-                  <TabsTrigger value="all" className="w-full">All</TabsTrigger>
-                </TabsList>
-                <TabsContent value="direct" className="mt-4">
-                  {isLoading ? (
-                    <div className="flex h-[200px] items-center justify-center">
-                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <TabsContent value="achievements">
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Achievements</CardTitle>
+              <CardDescription>Milestones and rewards</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {userProfile.achievements?.map((achievement, index) => (
+                  <div key={index} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                    <Award className="h-8 w-8 text-yellow-500" />
+                    <div>
+                      <p className="font-medium">{achievement.title}</p>
+                      <p className="text-sm text-gray-500">{achievement.description}</p>
                     </div>
-                  ) : downlineUsers.filter(user => user.sponsorId === userProfile?.id).length > 0 ? (
-                    <div className="space-y-4">
-                      {downlineUsers
-                        .filter(user => user.sponsorId === userProfile?.id)
-                        .map((user) => (
-                          <div
-                            key={user.id}
-                            className="flex items-center justify-between space-x-4"
-                          >
-                            <div className="flex items-center space-x-4">
-                              <div className="rounded-full bg-muted p-2">
-                                <UserGroupIcon className="h-5 w-5" />
-                              </div>
-                              <div>
-                                <p className="text-sm font-medium leading-none">
-                                  {user.name}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                  {user.email}
-                                </p>
-                              </div>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">
-                                {formatDate(user.createdAt)}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  ) : (
-                    <div className="flex h-[200px] flex-col items-center justify-center rounded-lg border border-dashed">
-                      <UserGroupIcon className="mb-2 h-8 w-8 text-muted-foreground" />
-                      <h3 className="font-medium">No direct referrals yet</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Share your referral link to get started
-                      </p>
-                    </div>
-                  )}
-                </TabsContent>
-                <TabsContent value="all" className="mt-4">
-                  {isLoading ? (
-                    <div className="flex h-[200px] items-center justify-center">
-                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                    </div>
-                  ) : downlineUsers.length > 0 ? (
-                    <div className="space-y-4">
-                      {downlineUsers.map((user) => (
-                        <div
-                          key={user.id}
-                          className="flex items-center justify-between space-x-4"
-                        >
-                          <div className="flex items-center space-x-4">
-                            <div className="rounded-full bg-muted p-2">
-                              <Users className="h-5 w-5" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium leading-none">
-                                {user.name}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                Level {user.level}
-                              </p>
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">
-                              {formatDate(user.createdAt)}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex h-[200px] flex-col items-center justify-center rounded-lg border border-dashed">
-                      <UserGroupIcon className="mb-2 h-8 w-8 text-muted-foreground" />
-                      <h3 className="font-medium">No team members yet</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Build your network to see members here
-                      </p>
-                    </div>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                  </div>
+                ))}
+                {(!userProfile.achievements || userProfile.achievements.length === 0) && (
+                  <div className="col-span-full text-center py-6">
+                    <Award className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No Achievements Yet</h3>
+                    <p className="text-gray-500">Complete tasks to earn achievements!</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

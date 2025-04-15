@@ -23,7 +23,7 @@ const AdminSidebar = ({ open, setOpen }: AdminSidebarProps) => {
   const { logout } = useAuth();
 
   const navigation = [
-    { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+    { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { name: "Users", href: "/admin/users", icon: Users },
     { name: "Transactions", href: "/admin/transactions", icon: FileText },
     { name: "Withdrawals", href: "/admin/withdrawals", icon: CreditCard },
@@ -41,7 +41,7 @@ const AdminSidebar = ({ open, setOpen }: AdminSidebarProps) => {
   const SidebarContent = () => (
     <div className="flex h-full flex-col overflow-y-auto bg-white">
       <div className="flex h-16 shrink-0 items-center border-b px-6">
-        <Link to="/admin/dashboard" className="flex items-center">
+        <Link to="/admin" className="flex items-center">
           <IndianRupee className="mr-2 h-6 w-6 text-primary" />
           <span className="text-xl font-bold text-primary">Admin Panel</span>
         </Link>
